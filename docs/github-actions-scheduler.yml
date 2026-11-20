@@ -1,0 +1,20 @@
+# Optional scheduler: calls the board's publish endpoint every 5 minutes.
+# To use it, copy this file to .github/workflows/scheduler.yml and add two repository secrets
+# (Settings → Secrets and variables → Actions): APP_URL (https://your-board.vercel.app) and CRON_SECRET.
+name: Post scheduled drafts
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Call the scheduler
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then echo "APP_URL or CRON_SECRET not set; skipping."; exit 0; fi
+          curl -fsS --max-time 320 -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/publish"

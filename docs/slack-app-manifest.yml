@@ -1,0 +1,16 @@
+display_information:
+  name: Draftboard
+  description: Pings you about comments, edits and approvals on your X drafts.
+  background_color: "#111111"
+features:
+  bot_user:
+    display_name: Draftboard
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
