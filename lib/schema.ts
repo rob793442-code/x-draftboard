@@ -1,6 +1,6 @@
 // The database schema. Applied automatically the first time the app talks to the database (lib/db.ts), and again
 // whenever SCHEMA_VERSION goes up. Every statement must be safe to run twice.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA = `
 create table if not exists app_state (
@@ -100,6 +100,45 @@ create table if not exists verdicts (
   created_at timestamptz not null default now()
 );
 create index if not exists verdicts_draft on verdicts(draft_id);
+
+-- who can get in beyond the company domains, and who's an admin. Everyone who signs in gets a row (last_seen);
+-- invited = an admin added them (needed for emails outside ALLOWED_EMAIL_DOMAINS, e.g. an agency);
+-- blocked = an admin removed them (they can't sign in, even on a company domain).
+create table if not exists members (
+  email text primary key,
+  name text,
+  role text not null default 'member',
+  invited boolean not null default false,
+  invited_by text,
+  invited_at timestamptz,
+  invite_token text unique,
+  note text,
+  blocked boolean not null default false,
+  first_seen timestamptz,
+  last_seen timestamptz
+);
+
+-- email sign-in links (Auth.js), only used when email sign-in is set up (AUTH_RESEND_KEY)
+create table if not exists auth_users (
+  id text primary key,
+  email text unique,
+  name text,
+  image text,
+  email_verified timestamptz
+);
+create table if not exists auth_accounts (
+  provider text not null,
+  provider_account_id text not null,
+  user_id text not null references auth_users(id) on delete cascade,
+  type text not null,
+  primary key (provider, provider_account_id)
+);
+create table if not exists auth_verification_tokens (
+  identifier text not null,
+  token text not null,
+  expires timestamptz not null,
+  primary key (identifier, token)
+);
 
 -- the @handle directory behind the mention menu: profiles looked up on X (profile) or why a handle doesn't resolve (missing)
 create table if not exists handles (

@@ -161,6 +161,8 @@ export interface Me {
   name: string;
   email: string;
   role: "admin" | "member";
+  /** outside the company domains: an invited agency or freelancer */
+  external: boolean;
   /** may post and schedule to X (brand.publishing.whoCanPublish) */
   can_publish: boolean;
 }

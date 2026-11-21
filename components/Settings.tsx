@@ -6,6 +6,7 @@ import brand from "@/brand.config";
 import type { Me, XAccount } from "@/lib/types";
 import { getConfig, type ClientConfig } from "./config";
 import { Badge, reloadAccount } from "./XPost";
+import People from "./People";
 
 const card = "flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-5";
 const eyebrow = "font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-white/40";
@@ -196,20 +197,19 @@ export default function Settings({ me }: { me: Me }) {
       </section>
 
       <section className={card}>
-        <div className={eyebrow}>Who can sign in</div>
-        {cfg?.access ? (
-          <div className="flex flex-col gap-1 text-sm text-white/70">
-            <div>Google accounts on: {cfg.access.domains.length ? cfg.access.domains.map((d) => `@${d}`).join(", ") : <span className="text-amber-300">no domains set (ALLOWED_EMAIL_DOMAINS)</span>}</div>
-            {cfg.access.emails.length > 0 && <div>Also: {cfg.access.emails.join(", ")}</div>}
-            <div>Admins: {cfg.access.admins.length ? cfg.access.admins.join(", ") : <span className="text-amber-300">none (ADMIN_EMAILS)</span>}</div>
-            <div className="pt-1 text-xs text-white/40">
-              Admins connect X, delete and rearrange drafts, and edit any draft. {brand.publishing.whoCanPublish === "everyone" ? "Everyone who can sign in can post and schedule." : "Only admins post and schedule."}{" "}
-              {brand.publishing.requireApproval ? "Drafts need an approval before they can go out." : "Drafts can go out without an approval."}
-            </div>
-          </div>
+        <div className={eyebrow}>People</div>
+        {cfg && me.role === "admin" ? (
+          <People me={me} domains={cfg.access.domains} emailSignin={cfg.access.email_signin} />
         ) : (
-          <div className="text-sm text-white/55">Your team&apos;s Google accounts. Ask an admin to add someone.</div>
+          <div className="text-sm text-white/55">
+            {cfg?.access.domains.length ? `Anyone with a ${cfg.access.domains.map((d) => `@${d}`).join(", ")} account can sign in. ` : ""}
+            Admins can invite people from outside the company, like an agency.
+          </div>
         )}
+        <div className="pt-1 text-xs text-white/40">
+          {brand.publishing.whoCanPublish === "everyone" ? "Everyone who can sign in can post and schedule." : "Only admins post and schedule."}{" "}
+          {brand.publishing.requireApproval ? "Drafts need an approval before they can go out." : "Drafts can go out without an approval."}
+        </div>
         {cfg && (
           <div className={`text-xs ${cfg.storage === "local" ? "text-amber-300" : "text-white/40"}`}>
             {cfg.storage === "local" ? "Media is saved on this computer (.data/uploads). Add a Vercel Blob store before you deploy." : "Media is stored in Vercel Blob."}

@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Set up this Draftboard for a team, step by step - make it theirs (brand name, colors, logo, font, folders), run it locally, deploy it to Vercel with a database and media storage, lock sign-in to the company's Google accounts, connect the company X account for posting and scheduling, turn on the scheduler, and optionally Slack. Use when someone has just cloned or forked this repo, asks to set it up, deploy it, rebrand it, change its colors or folders, restrict who can sign in, connect X, fix scheduling, or add Slack. Any step can run on its own.
+description: Set up this Draftboard for a team, step by step - make it theirs (brand name, colors, logo, font, folders), run it locally, deploy it to Vercel with a database and media storage, set up sign-in for the company's domain plus invited guests (agencies, freelancers), connect the company X account for posting and scheduling, turn on the scheduler, and optionally email sign-in links and Slack. Use when someone has just cloned or forked this repo, asks to set it up, deploy it, rebrand it, change its colors or folders, change who can sign in, let an agency or outside person in, connect X, fix scheduling, or add Slack. Any step can run on its own.
 ---
 
 # Set up Draftboard
@@ -74,18 +74,34 @@ Reference: `docs/deploy.md`.
 - Ask for the production URL once it exists. That's `YOUR-DOMAIN` for steps 4 and 5. If they'll use a custom domain,
   set `APP_URL` to it.
 
-## Step 4. Sign-in for your team only (Google)
+## Step 4. Sign-in: your company, plus guests you invite
 
-Reference: `docs/google-oauth.md`. Walk them through creating the OAuth client in Google Cloud Console, step by step,
-with the exact redirect URIs filled in with their URL:
-`https://YOUR-DOMAIN/api/auth/callback/google` (and `http://localhost:3000/api/auth/callback/google`).
-Recommend **Audience: Internal** if they're on Google Workspace.
+References: `docs/google-oauth.md`, `docs/people.md`. Explain the model in two lines: everyone on the company's email
+domain(s) can sign in as soon as it's live; anyone else (an agency, a freelancer) gets in once an admin invites them
+in Settings → People, and can be removed there any time.
+
+Ask: their company email domain(s), who the first admins are, and whether outside people (an agency, freelancers)
+will need access.
+
+Walk them through creating the OAuth client in Google Cloud Console, step by step, with the exact redirect URIs filled
+in with their URL: `https://YOUR-DOMAIN/api/auth/callback/google` (and `http://localhost:3000/api/auth/callback/google`).
+Audience: **External**, then **Publish app**, which is what lets invited guests in (Internal turns away anyone outside
+their Google Workspace, invited or not). Only recommend Internal if they're sure no outside person will ever need access.
 
 They add in Vercel → Settings → Environment Variables (Production): `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`,
-`AUTH_SECRET` (a new random one for production), `ALLOWED_EMAIL_DOMAINS`, `ADMIN_EMAILS`, and optionally
-`ALLOWED_EMAILS`. Then redeploy (Deployments → ⋯ → Redeploy, or `npx vercel deploy --prod`).
+`AUTH_SECRET` (a new random one for production), `ALLOWED_EMAIL_DOMAINS`, `ADMIN_EMAILS`. Leave `ALLOWED_EMAILS`
+empty: outside people are invited in the app. Then redeploy (Deployments → ⋯ → Redeploy, or `npx vercel deploy --prod`).
 
-Check: they can sign in with a work account. If they have a personal Gmail handy, it should be turned away.
+Check: they can sign in with a work account, and a personal Gmail that hasn't been invited is turned away.
+
+If they work with an agency, suggest **Step 4b** next.
+
+## Step 4b (optional). Email sign-in links for guests
+
+Reference: `docs/people.md`. For guests without a Google account: a one-time email link instead, and invites sent
+by email. They create a Resend account, verify their sending domain (DNS records), create an API key, and add
+`AUTH_RESEND_KEY` and `EMAIL_FROM` (e.g. `Acme Drafts <drafts@acme.com>`) in Vercel, then redeploy. Check: the sign-in
+page shows "Email me a sign-in link", and Settings → People → Invite sends the email.
 
 ## Step 5. Connect X (posting and scheduling)
 
@@ -121,7 +137,8 @@ Reference: `docs/slack.md`. App from `docs/slack-app-manifest.yml`, `SLACK_BOT_T
 ## Finish
 
 Run `npm run check:setup` and go through what's left. Summarize for them:
-- the URL, who can sign in, who the admins are
+- the URL, who can sign in (their domains), who the admins are, and that Settings → People is where they invite an
+  agency or remove someone
 - which X account is connected and how scheduling runs
 - where to change things later: `brand.config.ts` for the look, folders and rules; Vercel env vars for people and keys
 

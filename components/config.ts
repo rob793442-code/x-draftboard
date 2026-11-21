@@ -7,7 +7,7 @@ export type ClientConfig = {
   x_configured: boolean;
   scheduler: { secret_set: boolean; last_run: { at: string; posted?: number; failed?: number } | null };
   slack: { token_set: boolean; people: number; you: boolean };
-  access: { domains: string[]; emails: string[]; admins: string[] } | null;
+  access: { domains: string[]; email_signin: boolean };
   dev_user: boolean;
 };
 

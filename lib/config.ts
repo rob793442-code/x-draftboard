@@ -19,10 +19,17 @@ export const ALLOWED_EMAILS = list(process.env.ALLOWED_EMAILS);
 /** Admins: connect the X account, delete and rearrange drafts, edit any draft, and (by default) post and schedule. */
 export const ADMIN_EMAILS = list(process.env.ADMIN_EMAILS);
 
-export const isAllowedEmail = (email: string) => {
+/** On a company domain, or listed by email in the environment. Invited people are checked in lib/members.ts. */
+export const inCompany = (email: string) => {
   const e = email.toLowerCase();
   return ALLOWED_EMAILS.includes(e) || ADMIN_EMAILS.includes(e) || ALLOWED_DOMAINS.includes(e.split("@")[1] ?? "");
 };
+
+/** Email sign-in links and invite emails, sent through Resend (resend.com). Optional: without them, people sign in
+ *  with Google and admins copy invite links by hand. */
+export const RESEND_KEY = process.env.AUTH_RESEND_KEY?.trim() ?? "";
+export const EMAIL_FROM = process.env.EMAIL_FROM?.trim() ?? "";
+export const EMAIL_ON = !!(RESEND_KEY && EMAIL_FROM);
 
 /** X app credentials (developer.x.com). Without them the Connect X button explains what's missing. */
 export const X_CLIENT_ID = process.env.X_CLIENT_ID?.trim() ?? "";

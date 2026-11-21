@@ -30,7 +30,9 @@ branding", "connect X"). Offer it once; don't push it on someone who's here to c
 |---|---|
 | `brand.config.ts` | Name, company, X handle placeholder, logo, colors, folders, labels, publishing rules |
 | `app/fonts.ts` | UI font (next/font) |
-| `lib/config.ts` | Env-driven settings: `APP_URL`, allowed domains/emails, admins, X keys, storage mode |
+| `lib/config.ts` | Env-driven settings: `APP_URL`, allowed domains/emails, admins, X keys, email, storage mode |
+| `lib/members.ts` | Who gets in: company domains + invited guests (`members` table), roles, remove/restore, invite links and emails. `accessFor()` runs on every request |
+| `lib/auth.ts`, `lib/auth-adapter.ts`, `lib/email.ts` | Auth.js: Google always; email sign-in links (Resend) only when `AUTH_RESEND_KEY` + `EMAIL_FROM` are set, with a small DB adapter |
 | `lib/db.ts`, `lib/schema.ts` | Postgres via `postgres` (any provider), or PGlite in `.data/pglite` when `DATABASE_URL` is unset in dev. `sql\`...\`` returns rows; `tx([q\`...\`])` for transactions; cast arrays: `any(${ids}::text[])` |
 | `lib/store.ts` | Drafts, comments, suggestions, verdicts, versions, share links, drag-and-drop order |
 | `lib/publish.ts` | Post now / schedule / unschedule, the scheduler tick (`runDue`), approval fingerprint check, thread resume |
@@ -43,11 +45,15 @@ branding", "connect X"). Offer it once; don't push it on someone who's here to c
 | `components/Board.tsx` | Sidebar + views (inbox, queue, posted, folders, draft, settings) |
 | `components/Editor.tsx` | The X-style inline editor (autosave, media, @mentions, quotes, threads) |
 | `components/ReviewView.tsx` | Comments, suggestions, verdicts, history |
-| `components/PublishBar.tsx`, `components/Settings.tsx` | Posting/scheduling UI; X connect, scheduler and Slack status |
+| `components/PublishBar.tsx`, `components/Settings.tsx`, `components/People.tsx` | Posting/scheduling UI; X connect, scheduler and Slack status; inviting and managing people |
 | `docs/` | Human setup guides (Google sign-in, X API, deploy, scheduling, Slack, branding) |
 
+Access: everyone on `ALLOWED_EMAIL_DOMAINS`, plus guests an admin invited in Settings → People (stored in `members`),
+minus anyone an admin removed. `ADMIN_EMAILS` / `ALLOWED_EMAILS` always win and can't be changed from the app.
+
 Roles: everyone who can sign in writes, comments, suggests and gives verdicts. The writer and admins edit a draft
-directly. Admins (`ADMIN_EMAILS`) connect X, delete and reorder drafts; by default only they post and schedule
+directly. Admins (`ADMIN_EMAILS`, or made admin in People) connect X, manage people, delete and reorder drafts; by
+default only they post and schedule
 (`brand.publishing.whoCanPublish`). With `brand.publishing.requireApproval`, a draft must be approved and unchanged
 since approval to post (checked again at posting time).
 

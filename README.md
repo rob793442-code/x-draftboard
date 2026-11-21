@@ -16,7 +16,9 @@ infrastructure, behind your company's Google sign-in.
 - **Post and schedule.** Connect your company's X account once. Admins post approved drafts now or pick a time; a
   queue shows what's going out when. Threads post in order; if one fails halfway, retry finishes it without
   repeating the posts that went out. Editing a draft after approval holds it until someone approves it again.
-- **Only your team gets in.** Google sign-in limited to your email domain(s), with admins you choose.
+- **Your team, plus the guests you invite.** Everyone on your company's email domain can sign in from day one.
+  Admins invite anyone else (your agency, a freelancer) from Settings → People and can remove them any time. Guests
+  sign in with Google, or with an email link if they don't have a Google account.
 - **Yours to brand.** Name, logo, colors, font, folders and posting rules live in one file.
 - **Extras.** Share links that unfurl with the copy and image in Slack, drag-and-drop folders, optional Slack DMs
   for comments, edits, approvals and posts.
@@ -60,7 +62,8 @@ npm run demo                 # in another terminal: adds a few sample drafts
 |---|---|
 | Brand it: name, logo, colors, font, folders, posting rules | [docs/branding.md](docs/branding.md) |
 | Deploy to Vercel with Postgres and Blob storage | [docs/deploy.md](docs/deploy.md) |
-| Google sign-in, limited to your domain | [docs/google-oauth.md](docs/google-oauth.md) |
+| Google sign-in for your domain | [docs/google-oauth.md](docs/google-oauth.md) |
+| Inviting guests (agencies, freelancers), admins, email sign-in links | [docs/people.md](docs/people.md) |
 | Connect your X account (and what X's API costs) | [docs/x-api.md](docs/x-api.md) |
 | The scheduler | [docs/scheduling.md](docs/scheduling.md) |
 | Slack notifications (optional) | [docs/slack.md](docs/slack.md) |
@@ -81,7 +84,7 @@ Next.js 15 (App Router), React 19, Tailwind 3, Auth.js (Google), Postgres (any p
 locally), Vercel Blob, X API v2 with OAuth 2.0. No other services. The map of the code is in [CLAUDE.md](CLAUDE.md).
 
 Roles: everyone who can sign in writes, comments, suggests and gives verdicts; a draft's writer edits it directly;
-admins (`ADMIN_EMAILS`) also connect X, delete and reorder drafts, and post and schedule.
+admins also connect X, invite and remove people, delete and reorder drafts, and post and schedule.
 
 ## License
 

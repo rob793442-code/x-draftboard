@@ -14,7 +14,8 @@
 // breaks the action that triggered it.
 import { after } from "next/server";
 import { sql } from "./db";
-import { ADMIN_EMAILS, APP_URL } from "./config";
+import { APP_URL } from "./config";
+import { adminEmails } from "./members";
 import { mentionedIn, slackIds, slackOn, taggablePeople } from "./people";
 import { claimAnnouncement } from "./store";
 import type { Draft, Me, Verdict } from "./types";
@@ -159,7 +160,7 @@ export function notifyVerdict(u: Me, draftId: string, verdict: Verdict, reason: 
     const head = verdict === "approve" ? `:white_check_mark: *${esc(u.name)} approved* ${t}` : verdict === "kill" ? `:x: *${esc(u.name)} killed* ${t}` : `:warning: *${esc(u.name)} marked* ${t} *needs work*`;
     const text = [head, reason?.trim() ? quoted(reason) : null, verdict === "approve" ? "It's ready to post or schedule." : null, link(draftId)].filter(Boolean).join("\n");
     const out = new Map([[d.created_by, text]]);
-    if (verdict === "approve") for (const a of ADMIN_EMAILS) out.set(a, text);
+    if (verdict === "approve") for (const a of await adminEmails()) out.set(a, text);
     return out;
   });
 }
@@ -182,7 +183,7 @@ export function notifyNewDraft(u: Me, id: string) {
   deliver(u.email, async () => {
     await new Promise((r) => setTimeout(r, 2500));
     const d = await claimAnnouncement(id, u);
-    return new Map(d ? ADMIN_EMAILS.map((a) => [a, renderNewDraft(u.name, d)] as [string, string]) : []);
+    return new Map(d ? (await adminEmails()).map((a) => [a, renderNewDraft(u.name, d)] as [string, string]) : []);
   });
 }
 

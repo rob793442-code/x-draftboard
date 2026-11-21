@@ -21,7 +21,7 @@ const checks = [
     [!/logo: "\/logo\.svg"/.test(brand) || !fs.readFileSync("public/logo.svg", "utf8").includes("#1D9BF0"), "your logo is in public/ (still the placeholder)"],
   ]],
   ["Sign-in", [
-    [has("ALLOWED_EMAIL_DOMAINS") || has("ALLOWED_EMAILS"), "ALLOWED_EMAIL_DOMAINS (who can sign in)"],
+    [has("ALLOWED_EMAIL_DOMAINS"), "ALLOWED_EMAIL_DOMAINS (your company domain; guests are invited in Settings → People)"],
     [has("ADMIN_EMAILS"), "ADMIN_EMAILS"],
     [has("AUTH_SECRET"), "AUTH_SECRET"],
     [has("AUTH_GOOGLE_ID") && has("AUTH_GOOGLE_SECRET"), "AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET (docs/google-oauth.md)", "local dev can use DEV_USER instead"],
@@ -32,6 +32,7 @@ const checks = [
   ]],
   ["X", [[has("X_CLIENT_ID") && has("X_CLIENT_SECRET"), "X_CLIENT_ID / X_CLIENT_SECRET (docs/x-api.md); then connect the account in Settings"]]],
   ["Scheduler", [[has("CRON_SECRET"), "CRON_SECRET (docs/scheduling.md)"]]],
+  ["Email sign-in links for guests (optional)", [[has("AUTH_RESEND_KEY") && has("EMAIL_FROM"), "AUTH_RESEND_KEY / EMAIL_FROM (docs/people.md)", "optional; guests can use Google"]]],
   ["Slack (optional)", [[has("SLACK_BOT_TOKEN") && has("SLACK_USERS"), "SLACK_BOT_TOKEN / SLACK_USERS (docs/slack.md)", "optional"]]],
 ];
 
