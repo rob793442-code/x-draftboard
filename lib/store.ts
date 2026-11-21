@@ -4,6 +4,7 @@ import { q, sql, tx, type Row } from "./db";
 import { APP_URL } from "./config";
 import { compareBoard, planOrder } from "./order";
 import { deleteFiles } from "./storage";
+import { applySuggestion } from "./rebase";
 import type { Bundle, Comment, Draft, Folder, ListItem, Me, Post, Publish, ReviewStatus, Suggestion, Verdict, VerdictRow, VersionRow } from "./types";
 import { FOLDERS, LABELS, UNTITLED, isBlankDraft } from "./types";
 
@@ -163,7 +164,11 @@ export async function decideSuggestion(sid: string, u: Me, action: "accept" | "r
   if (action === "accept") {
     assertNotLive(row);
     const d = { ...(row.data as Draft), folder: row.folder as string, title: row.title as string };
-    const posts = d.posts.map((p, i) => (i === s.post_index ? { ...p, text: s.proposed_text as string } : p));
+    // Apply just the part it changes to the post as it reads now, so edits accepted before it stay. Only when those
+    // words are gone does it fall back to the whole suggested version (the card warns about that).
+    const cur = d.posts[s.post_index as number]?.text ?? "";
+    const text = applySuggestion(s.base_text as string, s.proposed_text as string, cur) ?? (s.proposed_text as string);
+    const posts = d.posts.map((p, i) => (i === s.post_index ? { ...p, text } : p));
     await writeDraft({ ...d, posts }, u.name, `Accepted ${s.author_name}'s suggestion on post ${(s.post_index as number) + 1}`);
   }
   const [r] = await sql`update suggestions set state = ${action === "accept" ? "accepted" : "rejected"}, decided_by = ${u.name}, decided_at = now() where id = ${sid} returning *`;

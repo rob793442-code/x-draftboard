@@ -1,11 +1,12 @@
 "use client";
 // Review: the post is shown the way X shows it, and that same surface is where you suggest edits (tracked changes),
 // highlight phrases to comment, and give a verdict (approve / needs work / kill).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Bundle, Comment, Me, Suggestion, VersionRow, Verdict } from "@/lib/types";
 import { reviewMeta } from "@/lib/types";
 import { locate, makeAnchor } from "@/lib/anchor";
 import { wordDiff } from "@/lib/diff";
+import { type Change, applySuggestion, rebase } from "@/lib/rebase";
 import { hrefFor, tokenize, xLength } from "@/lib/xtext";
 import { Actions, AuthorAvatar, AuthorLine, LinkCard, MediaBlock, QuoteCard, VideoPostCard, X, XLink, attachments, xFont } from "./XPost";
 import { TagBox, TagText, usePeople } from "./TagBox";
@@ -66,13 +67,13 @@ function selectionOffsets(container: HTMLElement): { start: number; end: number 
   return start >= 0 && end > start ? { start, end } : null;
 }
 
-type Range = { start: number; end: number; ids: string[] };
-function segments(text: string, comments: Comment[]): Range[] {
+type Seg = { start: number; end: number; ids: string[] };
+function segments(text: string, comments: Comment[]): Seg[] {
   const spans = comments.map((c) => ({ c, at: locate(text, c) })).filter((x) => x.at) as { c: Comment; at: { start: number; end: number } }[];
   const cuts = new Set<number>([0, text.length]);
   for (const s of spans) cuts.add(s.at.start).add(s.at.end);
   const pts = [...cuts].sort((a, b) => a - b);
-  const out: Range[] = [];
+  const out: Seg[] = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const [a, b] = [pts[i], pts[i + 1]];
     if (a === b) continue;
@@ -81,57 +82,252 @@ function segments(text: string, comments: Comment[]): Range[] {
   return out;
 }
 
+/** A suggested change placed in the post's current text (or the live preview of one being written). */
+export type Placed = Change & { id: string; preview?: boolean };
+
+const selecting = () => !!window.getSelection() && !window.getSelection()!.isCollapsed;
+
+/** text.slice(a, b), with comment highlights. */
+function CommentRuns({ text, segs, a, b, active, onPick }: { text: string; segs: Seg[]; a: number; b: number; active: string | null; onPick: (id: string) => void }) {
+  return (
+    <>
+      {segs
+        .filter((s) => s.end > a && s.start < b)
+        .map((s) => {
+          const st = Math.max(s.start, a);
+          const en = Math.min(s.end, b);
+          if (!s.ids.length) return <Colored key={st} full={text} start={st} end={en} />;
+          const on = active !== null && s.ids.includes(active);
+          return (
+            <mark
+              key={st}
+              onClick={() => !selecting() && onPick(s.ids[0])}
+              className={`cursor-pointer rounded-sm text-inherit ${on ? "bg-amber-300/45" : "bg-amber-300/20 hover:bg-amber-300/35"}`}
+              style={{ color: "inherit", borderBottom: "2px solid rgba(252,211,77,.7)" }}
+            >
+              <Colored full={text} start={st} end={en} />
+            </mark>
+          );
+        })}
+    </>
+  );
+}
+
+export type SelectAction = { label: string; primary?: boolean; run: (start: number, end: number) => void };
+
+/**
+ * One post's text. Suggested edits show inline as tracked changes (red strike = out, green = in), comments as
+ * amber highlights. Highlighting words pops a small menu (Suggest edit / Comment, Google Docs style); clicking
+ * a suggested change pops its card (accept / reject) right under it.
+ */
 function PostText({
   text,
   comments,
-  suggestion,
+  changes,
   active,
+  activeSug,
   onPick,
-  onSelect,
+  onPickSug,
+  actions,
+  chip,
 }: {
   text: string;
   comments: Comment[];
-  suggestion: Suggestion | null;
+  changes: Placed[];
   active: string | null;
+  activeSug: string | null;
   onPick: (id: string) => void;
-  onSelect: (start: number, end: number) => void;
+  onPickSug: (id: string | null) => void;
+  actions: SelectAction[];
+  chip: React.ReactNode;
 }) {
+  const wrap = useRef<HTMLDivElement>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const onMouseUp = () => {
-    if (!ref.current) return;
+  const [tool, setTool] = useState<{ start: number; end: number; x: number; y: number } | null>(null);
+  const [chipAt, setChipAt] = useState<{ x: number; y: number } | null>(null);
+
+  const check = () => {
+    if (!ref.current || !wrap.current || !actions.length) return;
     const o = selectionOffsets(ref.current);
-    if (o) onSelect(o.start, o.end);
+    if (!o || !text.slice(o.start, o.end).trim()) return setTool(null);
+    const r = window.getSelection()!.getRangeAt(0).getBoundingClientRect();
+    const w = wrap.current.getBoundingClientRect();
+    setTool({ ...o, x: Math.min(Math.max(r.left + r.width / 2 - w.left, 110), Math.max(110, w.width - 110)), y: r.top - w.top });
+  };
+
+  // the menu goes away when the highlight does
+  useEffect(() => {
+    if (!tool) return;
+    const onSel = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !ref.current?.contains(sel.anchorNode)) setTool(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setTool(null);
+    document.addEventListener("selectionchange", onSel);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("selectionchange", onSel);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [tool]);
+  // the text changed under the highlight (a save, a refresh): its offsets are stale
+  useEffect(() => setTool(null), [text]);
+
+  // the open suggestion's card sits under the end of its change; any click elsewhere closes it
+  const changeKey = changes.map((c) => `${c.id}:${c.start}:${c.end}:${c.insert.length}`).join("|");
+  useLayoutEffect(() => {
+    const el = activeSug && wrap.current?.querySelector(`[data-sug="${CSS.escape(activeSug)}"]`);
+    if (!el || !wrap.current) return setChipAt(null);
+    const rects = el.getClientRects();
+    const last = rects[rects.length - 1] ?? el.getBoundingClientRect();
+    const w = wrap.current.getBoundingClientRect();
+    const next = { x: Math.round(Math.min(Math.max(last.left - w.left, 0), Math.max(0, w.width - 280))), y: Math.round(last.bottom - w.top + 6) };
+    setChipAt((p) => (p && p.x === next.x && p.y === next.y ? p : next));
+  }, [activeSug, text, changeKey]);
+  useEffect(() => {
+    if (!activeSug) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest("[data-sug],[data-sugchip],[data-sugcard]")) onPickSug(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [activeSug, onPickSug]);
+
+  const segs = segments(text, comments);
+  const out: React.ReactNode[] = [];
+  let pos = 0;
+  for (const ch of [...changes].sort((a, b) => a.start - b.start)) {
+    if (ch.start > pos) out.push(<CommentRuns key={`t${pos}`} text={text} segs={segs} a={pos} b={ch.start} active={active} onPick={onPick} />);
+    const on = activeSug === ch.id;
+    out.push(
+      <span
+        key={`s${ch.id}`}
+        data-sug={ch.preview ? undefined : ch.id}
+        onClick={ch.preview ? undefined : () => !selecting() && onPickSug(on ? null : ch.id)}
+        title={ch.preview ? undefined : "Suggested edit: click to accept or reject"}
+        className={`rounded-sm ${ch.preview ? "border-b border-dashed border-accent/70" : "cursor-pointer hover:bg-emerald-400/10"} ${on ? "bg-emerald-400/15" : ""}`}
+      >
+        {wordDiff(text.slice(ch.start, ch.end), ch.insert).map((p, k) =>
+          p.kind === "same" ? (
+            <Colored key={k} full={p.text} />
+          ) : p.kind === "del" ? (
+            <span key={k} className="rounded-sm bg-rose-500/15 text-rose-300 line-through decoration-rose-300/80">
+              {p.text}
+            </span>
+          ) : (
+            <span key={k} data-noanchor className="rounded-sm bg-emerald-500/20 text-emerald-200">
+              <Colored full={p.text} />
+            </span>
+          ),
+        )}
+      </span>,
+    );
+    pos = ch.end;
+  }
+  if (pos < text.length) out.push(<CommentRuns key={`t${pos}`} text={text} segs={segs} a={pos} b={text.length} active={active} onPick={onPick} />);
+
+  return (
+    <div ref={wrap} className="relative">
+      <div
+        ref={ref}
+        onMouseUp={check}
+        onKeyUp={check}
+        onTouchEnd={() => setTimeout(check, 0)}
+        className="whitespace-pre-wrap break-words text-[15px] leading-[21px]"
+        style={{ color: X.text }}
+      >
+        {out}
+      </div>
+      {tool && (
+        <div
+          className="absolute z-30 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 whitespace-nowrap rounded-full border border-white/15 bg-[#16181C] p-1 shadow-lg shadow-black/60"
+          style={{ left: tool.x, top: tool.y - 8 }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {actions.map((a) => (
+            <button
+              key={a.label}
+              type="button"
+              onClick={() => {
+                a.run(tool.start, tool.end);
+                setTool(null);
+              }}
+              className={a.primary ? "rounded-full bg-primary px-3 py-1 text-xs font-medium text-on-primary hover:brightness-110" : "rounded-full px-3 py-1 text-xs text-white/80 hover:bg-white/10 hover:text-white"}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {chipAt && chip && (
+        <div data-sugchip className="absolute z-30" style={{ left: chipAt.x, top: chipAt.y }}>
+          {chip}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Where you type the replacement for highlighted words. */
+function ReplaceBox({
+  original,
+  value,
+  note,
+  edit,
+  busy,
+  onChange,
+  onNote,
+  onSubmit,
+  onCancel,
+}: {
+  original: string;
+  value: string;
+  note: string;
+  edit: boolean;
+  busy: boolean;
+  onChange: (v: string) => void;
+  onNote: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    // the highlighted words start selected: type to replace them, or arrow in to tweak
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const keys = (e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (value !== original && !busy) onSubmit();
+    }
+    if (e.key === "Escape") onCancel();
   };
   return (
-    <div ref={ref} onMouseUp={onMouseUp} className="whitespace-pre-wrap break-words text-[15px] leading-[21px]" style={{ color: X.text }}>
-      {suggestion
-        ? wordDiff(text, suggestion.proposed_text).map((p, i) =>
-            p.kind === "same" ? (
-              <Colored key={i} full={p.text} />
-            ) : p.kind === "del" ? (
-              <span key={i} className="rounded-sm bg-rose-500/15 text-rose-300 line-through decoration-rose-300/80">
-                {p.text}
-              </span>
-            ) : (
-              <span key={i} data-noanchor className="rounded-sm bg-emerald-500/20 text-emerald-200">
-                <Colored full={p.text} />
-              </span>
-            ),
-          )
-        : segments(text, comments).map((s, i) => {
-            if (!s.ids.length) return <Colored key={i} full={text} start={s.start} end={s.end} />;
-            const on = active !== null && s.ids.includes(active);
-            return (
-              <mark
-                key={i}
-                onClick={() => onPick(s.ids[0])}
-                className={`cursor-pointer rounded-sm text-inherit ${on ? "bg-amber-300/45" : "bg-amber-300/20 hover:bg-amber-300/35"}`}
-                style={{ color: "inherit", borderBottom: "2px solid rgba(252,211,77,.7)" }}
-              >
-                <Colored full={text} start={s.start} end={s.end} />
-              </mark>
-            );
-          })}
+    <div className="mt-2 flex flex-col gap-2 rounded-xl border border-accent/50 bg-accent/[0.05] p-2.5">
+      <div className="text-[12px] text-white/55">
+        {edit ? "Replace" : "Suggest replacing"} <span className="text-rose-300/90 line-through decoration-rose-300/70">{original.length > 140 ? `${original.slice(0, 139)}…` : original}</span> with:
+      </div>
+      <textarea
+        ref={ref}
+        rows={Math.min(8, Math.max(2, Math.ceil(value.length / 60) + value.split("\n").length - 1))}
+        className="w-full resize-y rounded-lg border border-white/15 bg-black/40 p-2 text-[15px] leading-[21px] outline-none transition focus:border-accent"
+        style={{ color: X.text, fontFamily: xFont }}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={keys}
+      />
+      {!edit && <input className={input} placeholder="Why? (optional)" value={note} onChange={(e) => onNote(e.target.value)} onKeyDown={keys} />}
+      <div className="flex items-center gap-2">
+        <button type="button" className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:brightness-110 disabled:opacity-50" disabled={busy || value === original} onClick={onSubmit}>
+          {edit ? "Save edit" : "Suggest edit"}
+        </button>
+        <button type="button" className={ghost} onClick={onCancel}>
+          Cancel
+        </button>
+        <span className="ml-auto text-[11px] text-white/35">⌘↵ to {edit ? "save" : "suggest"} · Esc to cancel</span>
+      </div>
     </div>
   );
 }
@@ -144,6 +340,7 @@ function Thread({
   active,
   onFocus,
   onChanged,
+  onEdit,
 }: {
   root: Comment;
   replies: Comment[];
@@ -152,6 +349,8 @@ function Thread({
   active: boolean;
   onFocus: () => void;
   onChanged: () => void;
+  /** open the replace box on the words this comment highlights (so a comment can become the edit) */
+  onEdit?: { label: string; run: () => void };
 }) {
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
@@ -200,6 +399,11 @@ function Thread({
                 Reply
               </button>
             )}
+            {!root.resolved && onEdit && (
+              <button type="button" className={`${ghost} border-accent/40 text-accent`} onClick={onEdit.run}>
+                {onEdit.label}
+              </button>
+            )}
             <button type="button" className={ghost} disabled={busy} onClick={() => post(`/api/comments/${root.id}`, "PATCH", { resolved: !root.resolved })}>
               {root.resolved ? "Reopen" : "Resolve"}
             </button>
@@ -215,18 +419,34 @@ function Thread({
   );
 }
 
-function SuggestionCard({ s, me, editor, readOnly, current, showing, onShow, onChanged }: { s: Suggestion; me: Me; editor: boolean; readOnly: boolean; current: string; showing: boolean; onShow: () => void; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const act = async (action: string) => {
-    setBusy(true);
-    const r = await fetch(`/api/suggestions/${s.id}`, { method: "PATCH", body: JSON.stringify({ action }) });
-    if (!r.ok) alert((await r.json()).error);
-    setBusy(false);
-    onChanged();
-  };
-  const stale = s.state === "pending" && s.base_text !== current;
+function SuggestionCard({
+  s,
+  me,
+  editor,
+  readOnly,
+  stale,
+  showing,
+  busy,
+  onShow,
+  onDecide,
+}: {
+  s: Suggestion;
+  me: Me;
+  editor: boolean;
+  readOnly: boolean;
+  /** pending, and the words it changes are gone from the post */
+  stale: boolean;
+  showing: boolean;
+  busy: boolean;
+  onShow: () => void;
+  onDecide: (action: "accept" | "reject" | "withdraw") => void;
+}) {
   return (
-    <div className={`rounded-xl border p-3 text-[13px] ${showing ? "border-emerald-400/50 bg-emerald-400/[0.05]" : "border-white/10 bg-white/[0.03]"}`}>
+    <div
+      data-sugcard
+      onClick={s.state === "pending" ? onShow : undefined}
+      className={`rounded-xl border p-3 text-[13px] transition ${s.state === "pending" ? "cursor-pointer" : ""} ${showing ? "border-emerald-400/50 bg-emerald-400/[0.05]" : "border-white/10 bg-white/[0.03]"}`}
+    >
       <div className="flex items-center gap-1.5">
         <span className="font-medium text-white/90">{s.author_name}</span>
         <span className="text-white/45">suggested an edit to post {s.post_index + 1}</span>
@@ -242,32 +462,32 @@ function SuggestionCard({ s, me, editor, readOnly, current, showing, onShow, onC
             </span>
           ))}
       </div>
-      {stale && <div className="mt-1 text-[11px] text-amber-300/90">The post changed after this was suggested. Accepting replaces the whole post with this version.</div>}
+      {stale && <div className="mt-1 text-[11px] text-amber-300/90">The words this changes are no longer in the post. Accepting replaces the whole post with this version.</div>}
       {s.state !== "pending" ? (
         <div className={`mt-2 text-[11px] ${s.state === "accepted" ? "text-emerald-300" : "text-white/40"}`}>
           {s.state === "accepted" ? "Accepted" : "Rejected"} by {s.decided_by}
         </div>
       ) : (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <button type="button" className={ghost} onClick={onShow}>
-            {showing ? "Hide inline" : "Show inline"}
-          </button>
-          {!readOnly && editor && (
-            <>
-              <button type="button" className={`${ghost} border-emerald-400/40 text-emerald-300`} disabled={busy} onClick={() => act("accept")}>
-                Accept
+        !readOnly &&
+        (editor || s.author_email === me.email) && (
+          <div className="mt-2 flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
+            {editor && (
+              <>
+                <button type="button" className={`${ghost} border-emerald-400/40 text-emerald-300`} disabled={busy} onClick={() => onDecide("accept")}>
+                  ✓ Accept
+                </button>
+                <button type="button" className={ghost} disabled={busy} onClick={() => onDecide("reject")}>
+                  ✕ Reject
+                </button>
+              </>
+            )}
+            {s.author_email === me.email && (
+              <button type="button" className={ghost} disabled={busy} onClick={() => onDecide("withdraw")}>
+                Withdraw
               </button>
-              <button type="button" className={ghost} disabled={busy} onClick={() => act("reject")}>
-                Reject
-              </button>
-            </>
-          )}
-          {!readOnly && s.author_email === me.email && (
-            <button type="button" className={ghost} disabled={busy} onClick={() => act("withdraw")}>
-              Withdraw
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )
       )}
     </div>
   );
@@ -339,7 +559,10 @@ export default function ReviewView({
   const [editText, setEditText] = useState("");
   const [editNote, setEditNote] = useState("");
   const [direct, setDirect] = useState(false);
-  const [shown, setShown] = useState<Record<number, string | null>>({});
+  const [hideSugs, setHideSugs] = useState<Record<number, boolean>>({});
+  const [activeSug, setActiveSug] = useState<string | null>(null);
+  // highlighted words being replaced (a suggestion, or a direct edit for whoever can edit)
+  const [replacing, setReplacing] = useState<{ post: number; start: number; end: number; base: string; text: string; note: string; edit: boolean } | null>(null);
   const [verdictOpen, setVerdictOpen] = useState<Verdict | null>(null);
   const [reason, setReason] = useState("");
   const [tab, setTab] = useState<"open" | "resolved" | "history">("open");
@@ -349,7 +572,9 @@ export default function ReviewView({
     setActive(null);
     setPending(null);
     setEditing(null);
-    setShown({});
+    setHideSugs({});
+    setActiveSug(null);
+    setReplacing(null);
     setTab("open");
   }, [draft.id]);
 
@@ -361,12 +586,142 @@ export default function ReviewView({
   const lastVerdict = verdicts[verdicts.length - 1];
   const status = bundle.review_status ?? "in_review";
   const canSuggest = !readOnly && !locked;
+  // accepting or rejecting changes the copy, so it's off once the draft is live on X
+  const canDecide = !readOnly && !locked;
 
-  // which suggestion is shown inline per post: explicit choice, else the newest pending one
-  const inlineFor = (i: number): Suggestion | null => {
-    if (i in shown) return pendingSugs.find((s) => s.id === shown[i]) ?? null;
-    const list = pendingSugs.filter((s) => s.post_index === i);
-    return list[list.length - 1] ?? null;
+  // where each pending suggestion lands in its post as it reads now (null = the words it changes are gone)
+  const placement = useMemo(() => {
+    const m = new Map<string, Change | null>();
+    for (const s of suggestions) if (s.state === "pending") m.set(s.id, rebase(s.base_text, s.proposed_text, draft.posts[s.post_index]?.text ?? ""));
+    return m;
+  }, [suggestions, draft.posts]);
+
+  /** What's drawn inline in post i: the replacement being typed, then the open suggestion, then newest first. Overlaps stay in the rail. */
+  const changesFor = (i: number): Placed[] => {
+    const text = draft.posts[i]?.text ?? "";
+    const out: Placed[] = [];
+    const fits = (c: Change) => !out.some((o) => c.start < o.end && o.start < c.end);
+    if (replacing?.post === i && replacing.base === text && replacing.text !== text.slice(replacing.start, replacing.end))
+      out.push({ id: "preview", start: replacing.start, end: replacing.end, insert: replacing.text, preview: true });
+    if (!hideSugs[i]) {
+      const list = pendingSugs.filter((s) => s.post_index === i).reverse();
+      list.sort((x, y) => Number(y.id === activeSug) - Number(x.id === activeSug));
+      for (const s of list) {
+        const c = placement.get(s.id);
+        if (c && fits(c)) out.push({ ...c, id: s.id });
+      }
+    }
+    return out;
+  };
+
+  const pickSug = useCallback((id: string | null) => {
+    setActiveSug(id);
+    if (id) setTab("open");
+  }, []);
+
+  const decide = async (sid: string, action: "accept" | "reject" | "withdraw") => {
+    setBusy(true);
+    const r = await fetch(`/api/suggestions/${sid}`, { method: "PATCH", body: JSON.stringify({ action }) });
+    setBusy(false);
+    if (!r.ok) alert((await r.json()).error);
+    setActiveSug(null);
+    onChanged();
+  };
+
+  /** Open the replace box on post `post`'s words start..end (edges trimmed, so a triple-clicked paragraph keeps its line break). */
+  const openReplace = (post: number, start: number, end: number, edit: boolean) => {
+    const t = draft.posts[post]?.text ?? "";
+    while (start < end && /\s/.test(t[start])) start++;
+    while (end > start && /\s/.test(t[end - 1])) end--;
+    // a drag that stops mid-word means the whole word
+    const w = (c: string | undefined) => !!c && /[\p{L}\p{N}'’_$@#]/u.test(c);
+    while (start > 0 && w(t[start - 1]) && w(t[start])) start--;
+    while (end < t.length && w(t[end - 1]) && w(t[end])) end++;
+    if (end <= start) return;
+    setPending(null);
+    setEditing(null);
+    setActiveSug(null);
+    setReplacing({ post, start, end, base: t, text: t.slice(start, end), note: "", edit });
+  };
+
+  const submitReplace = async () => {
+    if (!replacing) return;
+    const { post, start, end, base, text, note, edit } = replacing;
+    const current = draft.posts[post]?.text ?? "";
+    // if the post was saved meanwhile, land the change where those words are now
+    const proposed = applySuggestion(base, base.slice(0, start) + text + base.slice(end), current);
+    if (proposed === null) return alert("The post changed while you were typing and those words are gone. Highlight them again.");
+    if (proposed === current) return;
+    setBusy(true);
+    const r = edit
+      ? await fetch(`/api/drafts/${draft.id}`, { method: "PATCH", body: JSON.stringify({ posts: draft.posts.map((p, i) => (i === post ? { ...p, text: proposed } : p)) }) })
+      : await fetch(`/api/drafts/${draft.id}/suggestions`, { method: "POST", body: JSON.stringify({ post_index: post, base_text: current, proposed_text: proposed, note: note.trim() || null }) });
+    setBusy(false);
+    if (!r.ok) return alert((await r.json()).error);
+    setReplacing(null);
+    window.getSelection()?.removeAllRanges();
+    onChanged();
+  };
+
+  /** What highlighting words in post i offers. */
+  const actionsFor = (i: number): SelectAction[] =>
+    readOnly
+      ? []
+      : [
+          ...(canSuggest ? [{ label: editor && direct ? "✎ Edit" : "✎ Suggest edit", primary: true, run: (a: number, b: number) => openReplace(i, a, b, editor && direct) }] : []),
+          {
+            label: "Comment",
+            primary: !canSuggest,
+            run: (a: number, b: number) => {
+              setReplacing(null);
+              setPending({ post: i, start: a, end: b, target: "text" });
+            },
+          },
+        ];
+
+  /** The card under an open suggestion in post i. */
+  const chipFor = (i: number) => {
+    const s = pendingSugs.find((x) => x.id === activeSug && x.post_index === i);
+    if (!s) return null;
+    const mine = s.author_email === me.email;
+    return (
+      <div className="w-[280px] rounded-xl border border-white/15 bg-[#16181C] p-2.5 text-[12px] shadow-xl shadow-black/60">
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium text-white/90">{s.author_name}</span>
+          <span className="text-white/45">suggested this</span>
+          <span className="ml-auto text-[11px] text-white/35">{ago(s.created_at)}</span>
+        </div>
+        {s.note && <div className="mt-1 whitespace-pre-wrap text-white/75">{s.note}</div>}
+        {canDecide && (editor || mine) && (
+          <div className="mt-2 flex gap-1.5">
+            {editor && (
+              <>
+                <button type="button" className="rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-medium text-black hover:bg-emerald-400 disabled:opacity-50" disabled={busy} onClick={() => decide(s.id, "accept")}>
+                  ✓ Accept
+                </button>
+                <button type="button" className={ghost} disabled={busy} onClick={() => decide(s.id, "reject")}>
+                  ✕ Reject
+                </button>
+              </>
+            )}
+            {mine && (
+              <button type="button" className={ghost} disabled={busy} onClick={() => decide(s.id, "withdraw")}>
+                Withdraw
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** On a comment about specific words: jump straight to replacing them (the editor edits, others suggest). */
+  const editFromComment = (c: Comment) => {
+    if (!canSuggest || c.target !== "text" || c.post_index === null) return undefined;
+    const at = locate(draft.posts[c.post_index]?.text ?? "", c);
+    if (!at) return undefined;
+    const post = c.post_index;
+    return { label: editor ? "✎ Edit this part" : "✎ Suggest an edit here", run: () => openReplace(post, at.start, at.end, editor) };
   };
 
   const submitComment = async () => {
@@ -473,9 +828,7 @@ export default function ReviewView({
           <div className={`flex items-center gap-2 text-xs ${canSuggest ? "text-white" : "text-white/45"}`}>
             {canSuggest ? (
               <>
-                <span>Select words to comment. Use</span>
-                <span className="rounded border border-white/50 px-1.5 py-0.5 text-white">✎</span>
-                <span>to {editor && direct ? "edit" : "suggest an edit"}.</span>
+                <span>Highlight words to {editor && direct ? "edit them" : "suggest an edit"} or comment.</span>
                 {editor && (
                   <span className="ml-auto flex items-center gap-1 rounded-full border border-white/10 p-0.5">
                     {[false, true].map((d) => (
@@ -487,13 +840,13 @@ export default function ReviewView({
                 )}
               </>
             ) : (
-              <span>{locked ?? ""}</span>
+              <span>{locked ? `${locked} Highlight words to comment.` : ""}</span>
             )}
           </div>
           <div className="rounded-2xl border bg-black px-4 pb-3 pt-3" style={{ borderColor: X.border, fontFamily: xFont }}>
             {draft.posts.map((p, i) => {
               const last = i === draft.posts.length - 1;
-              const sug = inlineFor(i);
+              const nSugs = pendingSugs.filter((s) => s.post_index === i && placement.get(s.id)).length;
               const postComments = openRoots.filter((c) => c.post_index === i && c.target === "text");
               const { quote, link, videoPost } = attachments(p);
               return (
@@ -509,14 +862,15 @@ export default function ReviewView({
                       {canSuggest && editing !== i && (
                         <button
                           type="button"
-                          title={editor && direct ? "Edit this post" : "Suggest an edit"}
+                          title={editor && direct ? "Edit the whole post" : "Suggest a rewrite of the whole post (to change a few words, highlight them instead)"}
                           onClick={() => {
+                            setReplacing(null);
                             setEditing(i);
                             setEditText(p.text);
                           }}
-                          className="ml-1 rounded border border-white/50 px-1.5 text-[13px] text-white hover:border-accent hover:text-accent"
+                          className="ml-1 rounded-full border border-white/25 px-2 py-0.5 text-[11px] text-white/70 hover:border-accent hover:text-accent"
                         >
-                          ✎
+                          {editor && direct ? "✎ Edit post" : "✎ Rewrite post"}
                         </button>
                       )}
                     </div>
@@ -543,25 +897,60 @@ export default function ReviewView({
                       </div>
                     ) : (
                       <>
-                        {sug && (
+                        {nSugs > 0 && (
                           <div className="mb-1 text-[11px] text-emerald-300/80">
-                            Showing {sug.author_name}&apos;s suggested edit ·{" "}
-                            <button type="button" className="underline" onClick={() => setShown((s) => ({ ...s, [i]: null }))}>
-                              show original
-                            </button>
+                            {hideSugs[i] ? (
+                              <>
+                                Showing the original ·{" "}
+                                <button type="button" className="underline" onClick={() => setHideSugs((h) => ({ ...h, [i]: false }))}>
+                                  show {nSugs === 1 ? "the suggested edit" : `${nSugs} suggested edits`}
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {nSugs === 1 ? "1 suggested edit" : `${nSugs} suggested edits`} in green{editor && !readOnly ? ", click to accept or reject" : ""} ·{" "}
+                                <button
+                                  type="button"
+                                  className="underline"
+                                  onClick={() => {
+                                    setHideSugs((h) => ({ ...h, [i]: true }));
+                                    setActiveSug(null);
+                                  }}
+                                >
+                                  show original
+                                </button>
+                              </>
+                            )}
                           </div>
                         )}
                         <PostText
                           text={p.text}
                           comments={postComments}
-                          suggestion={sug}
+                          changes={changesFor(i)}
                           active={active}
+                          activeSug={activeSug}
                           onPick={(id) => {
                             setActive(id);
                             setTab("open");
                           }}
-                          onSelect={(start, end) => !readOnly && setPending({ post: i, start, end, target: "text" })}
+                          onPickSug={pickSug}
+                          actions={actionsFor(i)}
+                          chip={chipFor(i)}
                         />
+                        {replacing?.post === i && (
+                          <ReplaceBox
+                            key={`${replacing.start}-${replacing.end}`}
+                            original={replacing.base.slice(replacing.start, replacing.end)}
+                            value={replacing.text}
+                            note={replacing.note}
+                            edit={replacing.edit}
+                            busy={busy}
+                            onChange={(text) => setReplacing((r) => r && { ...r, text })}
+                            onNote={(note) => setReplacing((r) => r && { ...r, note })}
+                            onSubmit={submitReplace}
+                            onCancel={() => setReplacing(null)}
+                          />
+                        )}
                       </>
                     )}
                     {!!p.media?.length && (
@@ -646,20 +1035,24 @@ export default function ReviewView({
                   s={s}
                   me={me}
                   editor={editor}
-                  readOnly={readOnly}
-                  current={draft.posts[s.post_index]?.text ?? ""}
-                  showing={inlineFor(s.post_index)?.id === s.id}
-                  onShow={() => setShown((x) => ({ ...x, [s.post_index]: inlineFor(s.post_index)?.id === s.id ? null : s.id }))}
-                  onChanged={onChanged}
+                  readOnly={!canDecide}
+                  stale={!placement.get(s.id)}
+                  showing={activeSug === s.id}
+                  busy={busy}
+                  onShow={() => {
+                    setHideSugs((h) => ({ ...h, [s.post_index]: false }));
+                    pickSug(activeSug === s.id ? null : s.id);
+                  }}
+                  onDecide={(a) => decide(s.id, a)}
                 />
               ))}
               {openRoots.map((c) => (
-                <Thread key={c.id} root={c} replies={repliesOf(c.id)} me={me} readOnly={readOnly} active={active === c.id} onFocus={() => setActive(c.id)} onChanged={onChanged} />
+                <Thread key={c.id} root={c} replies={repliesOf(c.id)} me={me} readOnly={readOnly} active={active === c.id} onFocus={() => setActive(c.id)} onChanged={onChanged} onEdit={editFromComment(c)} />
               ))}
               {roots.filter((c) => !c.resolved && c.target === "text" && c.post_index !== null && !locate(draft.posts[c.post_index]?.text ?? "", c)).length > 0 && (
                 <div className="text-[11px] text-white/35">Some comments point at words that have since changed; they show without a highlight.</div>
               )}
-              {!pendingSugs.length && !openRoots.length && <div className="rounded-xl border border-dashed border-white/10 p-5 text-center text-xs text-white/35">{readOnly ? "No feedback yet." : "No open comments. Select words in the post to start one."}</div>}
+              {!pendingSugs.length && !openRoots.length && <div className="rounded-xl border border-dashed border-white/10 p-5 text-center text-xs text-white/35">{readOnly ? "No feedback yet." : "Nothing open. Highlight words in the post to suggest an edit or comment."}</div>}
               {!readOnly && !pending && (
                 <button type="button" className={`${ghost} self-start`} onClick={() => setPending({ post: 0, start: 0, end: 0, target: "draft" })}>
                   + Comment on the whole draft
@@ -670,7 +1063,7 @@ export default function ReviewView({
           {tab === "resolved" && (
             <>
               {decidedSugs.map((s) => (
-                <SuggestionCard key={s.id} s={s} me={me} editor={editor} readOnly current={draft.posts[s.post_index]?.text ?? ""} showing={false} onShow={() => {}} onChanged={onChanged} />
+                <SuggestionCard key={s.id} s={s} me={me} editor={editor} readOnly stale={false} showing={false} busy={false} onShow={() => {}} onDecide={() => {}} />
               ))}
               {roots
                 .filter((c) => c.resolved)

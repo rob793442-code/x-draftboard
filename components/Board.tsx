@@ -248,7 +248,8 @@ export default function Board() {
   );
 
   const load = useCallback(async () => {
-    const r = await fetch("/api/drafts", { cache: "no-store" });
+    const r = await fetch("/api/drafts", { cache: "no-store" }).catch(() => null);
+    if (!r) return void setLoadErr("Can't reach the server. Retrying in a moment."); // offline, or a deploy in progress
     if (r.status === 401) return void (window.location.href = "/signin");
     if (r.ok) {
       setDrafts(await r.json());
