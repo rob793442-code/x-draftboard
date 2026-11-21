@@ -40,6 +40,75 @@ function Copy({ text }: { text: string }) {
   );
 }
 
+const METHOD_TEXT: Record<"smart" | "api" | "manual", string> = {
+  smart: "Posts without links go through X's API (about 1.5¢ each). Posts with a link cost about 20¢ through the API, so they default to Post it yourself, which is free.",
+  api: "Everything goes out through X's API: about 1.5¢ a post, 20¢ if it has a link. Post it yourself (free) is still on every draft.",
+  manual: "Everything is posted by hand on X (free). The board never uses X's API to post.",
+};
+
+/** How drafts get onto X, what the API has cost this month, and the monthly budget (admins set it). */
+function Costs({ me, cfg, onSaved }: { me: Me; cfg: ClientConfig; onSaved: () => void }) {
+  const { method, spend } = cfg.publishing;
+  const [budget, setBudget] = useState(spend.budget?.toString() ?? "");
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => setBudget(spend.budget?.toString() ?? ""), [spend.budget]);
+  const save = async () => {
+    setMsg("Saving…");
+    const r = await fetch("/api/settings/budget", { method: "PUT", body: JSON.stringify({ monthly: budget.trim() ? Number(budget) : null }) });
+    const j = await r.json().catch(() => ({}));
+    setMsg(r.ok ? "Saved." : (j.error ?? "Couldn't save it."));
+    if (r.ok) onSaved();
+  };
+  const pct = spend.budget ? Math.min(100, (spend.month / spend.budget) * 100) : 0;
+  return (
+    <section className={card}>
+      <div className={eyebrow}>Posting and costs</div>
+      <div className="text-sm text-white/70">
+        <span className="font-medium text-white">{method === "smart" ? "Smart" : method === "api" ? "Through the API" : "By hand"}</span>: {METHOD_TEXT[method]}
+        <span className="text-white/40"> (publishing.method in brand.config.ts)</span>
+      </div>
+      {method !== "manual" && (
+        <>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+            <span className="text-white/60">X API this month:</span>
+            <span className="font-mono text-white">${spend.month.toFixed(2)}</span>
+            {spend.budget && <span className="text-white/45">of ${spend.budget.toFixed(2)} budget</span>}
+            <span className="text-[11px] text-white/35">estimated from X&apos;s price list; console.x.com has the real meter</span>
+          </div>
+          {spend.budget && (
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div className={`h-full ${pct >= 90 ? "bg-rose-400" : pct >= 70 ? "bg-amber-400" : "bg-accent"}`} style={{ width: `${pct}%` }} />
+            </div>
+          )}
+          {me.role === "admin" ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-white/60">Monthly budget</span>
+              <span className="text-white/40">$</span>
+              <input
+                className="w-24 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-sm text-white outline-none focus:border-accent"
+                inputMode="decimal"
+                placeholder="none"
+                value={budget}
+                onChange={(e) => setBudget(e.target.value.replace(/[^0-9.]/g, ""))}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+              />
+              <button type="button" className={ghost} onClick={save}>
+                Save
+              </button>
+              {msg && <span className="text-xs text-white/50">{msg}</span>}
+              <span className="w-full text-[11px] text-white/40">
+                Past the budget, the board stops posting through the API until next month (Post it yourself still works). Set a spending limit in X&apos;s Developer Console too: that&apos;s the hard stop.
+              </span>
+            </div>
+          ) : (
+            spend.budget === null && <div className="text-xs text-white/40">No monthly budget set.</div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function Settings({ me }: { me: Me }) {
   const [cfg, setCfg] = useState<ClientConfig | null>(null);
   const [x, setX] = useState<{ account: XAccount | null; configured: boolean; callback_url: string } | null>(null);
@@ -140,7 +209,14 @@ export default function Settings({ me }: { me: Me }) {
           )
         ) : (
           <div className="flex flex-col gap-2 text-sm text-white/60">
-            <div>To post from here, create an app at developer.x.com and add its OAuth 2.0 keys as X_CLIENT_ID and X_CLIENT_SECRET.</div>
+            {brand.publishing.method === "manual" ? (
+              <div>This board posts by hand (publishing.method is &quot;manual&quot;), so it doesn&apos;t need an X app. Connect one only if you want the board to post through X&apos;s API:</div>
+            ) : (
+              <div>
+                Drafts can always be posted by hand on X for free. To have the board post and schedule them itself through X&apos;s API, create an app at console.x.com and add its OAuth 2.0 keys as X_CLIENT_ID
+                and X_CLIENT_SECRET.
+              </div>
+            )}
             {x && (
               <div className="text-xs text-white/45">
                 Callback URL for the app: <code className="rounded bg-white/10 px-1.5 py-0.5 text-white/80">{x.callback_url}</code>
@@ -151,6 +227,8 @@ export default function Settings({ me }: { me: Me }) {
           </div>
         )}
       </section>
+
+      {cfg && <Costs me={me} cfg={cfg} onSaved={() => getConfig(true).then(setCfg)} />}
 
       <section className={card}>
         <div className={eyebrow}>Scheduler</div>

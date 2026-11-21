@@ -126,7 +126,9 @@ function Badges({ d }: { d: Item }) {
         ? { label: "Posting…", badge: "bg-violet-400/15 text-violet-300" }
         : p.state === "failed"
           ? { label: "Didn't post", badge: "bg-rose-400/15 text-rose-300" }
-          : p.state === "scheduled" && brand.publishing.requireApproval && !d.meta.approved_current
+          : p.state === "scheduled" && p.method === "manual" && p.scheduled_at
+            ? { label: `⏱ ${when(p.scheduled_at)} · in X`, badge: "bg-violet-400/15 text-violet-300" }
+            : p.state === "scheduled" && brand.publishing.requireApproval && !d.meta.approved_current
             ? { label: "⚠ Needs approval to post", badge: "bg-amber-400/15 text-amber-300" }
             : p.state === "scheduled" && p.scheduled_at
               ? { label: `⏱ ${when(p.scheduled_at)}`, badge: "bg-violet-400/15 text-violet-300" }
@@ -588,7 +590,7 @@ export default function Board() {
             <div>
               <div className={eyebrow}>Queue</div>
               <h1 className="text-2xl font-medium tracking-[-0.02em]">Scheduled · {queue.length}</h1>
-              <div className="text-sm text-white/45">Approved drafts waiting for their time, soonest first. Open one to change its time or post it now.</div>
+              <div className="text-sm text-white/45">Approved drafts waiting for their time, soonest first: the board posts the ones it scheduled; &quot;in X&quot; ones were scheduled on X by hand.</div>
             </div>
             {loaded && queue.length === 0 && <div className={empty}>Nothing scheduled. Approve a draft, then pick a time from its page.</div>}
             {[...new Set(queue.map((d) => (d.meta.publish.state === "failed" ? "failed" : fmtDay(d.meta.publish.scheduled_at ?? d.created_at))))].map((day) => (

@@ -10,6 +10,10 @@ secret is ever committed.
 
 ## 2. Create the Vercel project
 
+Which plan: Vercel's free Hobby plan is for personal, non-commercial use only, so a company running this should use
+**Pro** ($20 a month per member who deploys; teammates who only use the board don't need a Vercel seat). Hobby is fine
+for trying it out. If your company already has a Vercel Pro team, put the project there and it costs nothing extra.
+
 1. [vercel.com/new](https://vercel.com/new) → import your repo. Framework: Next.js (detected). Don't deploy yet, or
    let the first deploy fail; it needs the settings below.
 2. **Storage → Create → Neon (Postgres)** and connect it to the project. This adds `DATABASE_URL`. (Supabase,

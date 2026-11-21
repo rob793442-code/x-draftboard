@@ -20,5 +20,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ path: st
     const body = fs.createReadStream(p, { start, end }) as unknown as ReadableStream;
     return new Response(body, { status: 206, headers: { "content-type": type, "content-length": String(end - start + 1), "content-range": `bytes ${start}-${end}/${size}`, "accept-ranges": "bytes" } });
   }
-  return new Response(fs.createReadStream(p) as unknown as ReadableStream, { headers: { "content-type": type, "content-length": String(size), "accept-ranges": "bytes" } });
+  // ?download=1 (Post it yourself → Download): save it instead of showing it, like Vercel Blob's download URLs
+  const download: Record<string, string> = new URL(req.url).searchParams.get("download") === "1" ? { "content-disposition": `attachment; filename="${p.split("/").pop()}"` } : {};
+  return new Response(fs.createReadStream(p) as unknown as ReadableStream, { headers: { "content-type": type, "content-length": String(size), "accept-ranges": "bytes", ...download } });
 }

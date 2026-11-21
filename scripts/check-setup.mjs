@@ -30,8 +30,12 @@ const checks = [
     [has("DATABASE_URL"), "DATABASE_URL (Postgres)", "local dev uses the built-in database"],
     [has("BLOB_READ_WRITE_TOKEN"), "BLOB_READ_WRITE_TOKEN (Vercel Blob)", "local dev saves uploads to .data/uploads"],
   ]],
-  ["X", [[has("X_CLIENT_ID") && has("X_CLIENT_SECRET"), "X_CLIENT_ID / X_CLIENT_SECRET (docs/x-api.md); then connect the account in Settings"]]],
-  ["Scheduler", [[has("CRON_SECRET"), "CRON_SECRET (docs/scheduling.md)"]]],
+  ...(/method: "manual"/.test(brand)
+    ? [["X", [[true, 'posting by hand (publishing.method is "manual"): no X app or scheduler needed']]]]
+    : [
+        ["X API (posting and scheduling by the board)", [[has("X_CLIENT_ID") && has("X_CLIENT_SECRET"), "X_CLIENT_ID / X_CLIENT_SECRET (docs/x-api.md); then connect the account in Settings", "without it, posts go out by hand"]]],
+        ["Scheduler", [[has("CRON_SECRET"), "CRON_SECRET (docs/scheduling.md)", "only for posts the board schedules"]]],
+      ]),
   ["Email sign-in links for guests (optional)", [[has("AUTH_RESEND_KEY") && has("EMAIL_FROM"), "AUTH_RESEND_KEY / EMAIL_FROM (docs/people.md)", "optional; guests can use Google"]]],
   ["Slack (optional)", [[has("SLACK_BOT_TOKEN") && has("SLACK_USERS"), "SLACK_BOT_TOKEN / SLACK_USERS (docs/slack.md)", "optional"]]],
 ];

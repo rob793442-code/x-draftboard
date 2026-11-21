@@ -69,6 +69,8 @@ export interface Draft {
 
 export interface Publish {
   state: PublishState | null;
+  /** "api" = the board posts it through X's API; "manual" = someone posts (or scheduled) it on X by hand */
+  method: "api" | "manual" | null;
   scheduled_at: string | null;
   scheduled_by: string | null;
   error: string | null;
@@ -199,4 +201,4 @@ export const UNTITLED = "Untitled draft";
 export const isBlankDraft = (d: Pick<Draft, "title" | "posts">) =>
   [UNTITLED, ""].includes(d.title.trim()) && d.posts.every((p) => !p.text.trim() && !p.media?.length && !p.quote && !p.video_post);
 
-export const NO_PUBLISH: Publish = { state: null, scheduled_at: null, scheduled_by: null, error: null, posted_at: null, posted_url: null, posted_count: 0 };
+export const NO_PUBLISH: Publish = { state: null, method: null, scheduled_at: null, scheduled_by: null, error: null, posted_at: null, posted_url: null, posted_count: 0 };

@@ -67,6 +67,8 @@ Reference: `docs/deploy.md`.
 - Check `git remote -v`. If it still points at the original Draftboard repo, offer to create their own (private by
   default): `gh repo create <name> --private --source . --push` (ask for the name; needs the GitHub CLI signed in).
   Commit their branding first.
+- Tell them which Vercel plan: Hobby is non-commercial only, so a company should use Pro ($20/month per deploying
+  member), or an existing company Vercel team at no extra cost. Hobby is fine for a trial.
 - They create the Vercel project from that repo (vercel.com/new) and, in the project's **Storage** tab, create and
   connect **Neon Postgres** (adds `DATABASE_URL`) and **Blob** (adds `BLOB_READ_WRITE_TOKEN`). These are clicks in their
   browser; walk them through it. If you have a Vercel CLI or MCP signed in to their account, you can create the
@@ -103,12 +105,22 @@ by email. They create a Resend account, verify their sending domain (DNS records
 `AUTH_RESEND_KEY` and `EMAIL_FROM` (e.g. `Acme Drafts <drafts@acme.com>`) in Vercel, then redeploy. Check: the sign-in
 page shows "Email me a sign-in link", and Settings → People → Invite sends the email.
 
-## Step 5. Connect X (posting and scheduling)
+## Step 5. How posts get onto X
 
-Reference: `docs/x-api.md`. Explain the cost model first (pay-per-use credits, roughly $0.015 a post and $0.20 for a
-post with a link) and that they decide on credits and spending limits; don't push them.
+Reference: `docs/x-api.md`. Explain the two ways in a few lines, then ask which they want:
 
-Walk them through: developer app at console.x.com on the Pay Per Use package with credits; User authentication
+- **Post it yourself (free):** after approval, X's own composer opens with each post filled in; they post or schedule it
+  on X and mark it here. No X developer app, no credits.
+- **Through X's API:** the board posts and schedules on its own. Pay-per-use: about 1.5¢ a post, 20¢ for a post with a
+  link (late 2026). For about 6 posts a weekday that's roughly $11 a month all-API, or about $1 with "smart".
+- **Smart (recommended):** posts without links through the API, posts with links by hand.
+
+Set `publishing.method` in `brand.config.ts` to `"smart"`, `"api"` or `"manual"`. If they pick `"manual"`, skip the rest
+of this step and Step 6 (no X app, no scheduler needed). Never suggest browser extensions or scripts that post through
+x.com: X's automation rules forbid it and it can get the account suspended.
+
+For the API, they decide on credits and spending limits; don't push them. Suggest setting a monthly budget in
+Settings → Posting and costs, plus a spending limit in X's Developer Console. Then walk them through: developer app at console.x.com on the Pay Per Use package with credits; User authentication
 settings → OAuth 2.0, Web App, Read and write, callback `https://YOUR-DOMAIN/api/x/callback`, website URL. They add
 `X_CLIENT_ID` and `X_CLIENT_SECRET` in Vercel and redeploy.
 
@@ -124,7 +136,9 @@ Reference: `docs/scheduling.md`.
 
 - They add `CRON_SECRET` (a long random string) in Vercel and redeploy. `vercel.json` already runs the scheduler every
   15 minutes (Vercel Schedules).
-- Ask which plan they're on. Hobby: posts can be up to ~15 minutes late; offer cron-job.org (free, every minute) or the
+- Only needed for posts the board schedules through the API. Drafts scheduled by hand in X don't depend on it.
+- Ask which plan they're on. Vercel's Hobby plan is for non-commercial use only, so a company should be on Pro (say so
+  plainly; don't let them assume free hosting). Hobby (for trying it out): posts can be up to ~15 minutes late; offer cron-job.org (free, every minute) or the
   GitHub Action in `docs/github-actions-scheduler.yml`. Pro: change the schedule in `vercel.json` to `* * * * *` with
   `"jitter": 1`, commit, push.
 - Check: Settings → Scheduler shows a recent "Last run" after the next tick.

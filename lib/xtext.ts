@@ -125,6 +125,17 @@ export function cutRange(text: string, start: number, end: number): string {
   return joined.replace(/\n{3,}/g, "\n\n");
 }
 
+/**
+ * What goes out as a post's text. X's API only lets Enterprise apps attach a quote, so a quoted post (or a video
+ * post) goes out the way X's own composer does it: the link to the post at the end of the text, which X shows as the
+ * quote card. Used by the API publisher and by "Post it yourself".
+ */
+export function textFor(p: { text: string; quote?: string | null; video_post?: string | null }): string {
+  const ref = p.quote ?? p.video_post;
+  const text = p.text.trim();
+  return ref ? (text ? `${text}\n\n${ref}` : ref) : text;
+}
+
 /** How X dates a post in a quote card: "12m" / "5h" today, "Oct 28" this year, "Oct 28, 2025" before. */
 export function xDate(iso: string, now = Date.now()): string {
   const t = Date.parse(iso);

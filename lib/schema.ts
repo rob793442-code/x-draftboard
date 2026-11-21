@@ -1,6 +1,6 @@
 // The database schema. Applied automatically the first time the app talks to the database (lib/db.ts), and again
 // whenever SCHEMA_VERSION goes up. Every statement must be safe to run twice.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA = `
 create table if not exists app_state (
@@ -100,6 +100,19 @@ create table if not exists verdicts (
   created_at timestamptz not null default now()
 );
 create index if not exists verdicts_draft on verdicts(draft_id);
+
+-- how a draft goes out: 'api' (posted by the board through X's API) or 'manual' (someone posts it on X by hand)
+alter table drafts add column if not exists publish_method text;
+
+-- what the board spent on X's API (estimated from X's price list), for the monthly total and budget in Settings
+create table if not exists api_spend (
+  id serial primary key,
+  at timestamptz not null default now(),
+  kind text not null,
+  cost double precision not null,
+  draft_id text
+);
+create index if not exists api_spend_at on api_spend(at);
 
 -- who can get in beyond the company domains, and who's an admin. Everyone who signs in gets a row (last_seen);
 -- invited = an admin added them (needed for emails outside ALLOWED_EMAIL_DOMAINS, e.g. an agency);

@@ -23,6 +23,7 @@ export const hashPosts = (posts: Post[]) =>
 
 const publishOf = (r: Row): Publish => ({
   state: (r.publish_state as Publish["state"]) ?? null,
+  method: (r.publish_method as Publish["method"]) ?? null,
   scheduled_at: iso(r.scheduled_at),
   scheduled_by: (r.scheduled_by as string) ?? null,
   error: (r.publish_error as string) ?? null,

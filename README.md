@@ -2,8 +2,8 @@
 
 A drafts board for your team's X account. Write posts and threads in an editor that looks like X, review them
 together (comments on highlighted words, tracked-change suggestions, approve / needs work / kill), then post them or
-schedule them to your company's X account. Like a shared Typefully with a review step built in, running on your own
-infrastructure, behind your company's Google sign-in.
+schedule them to your company's X account. A shared drafting and scheduling tool with a review step built in, running
+on your own infrastructure, behind your company's Google sign-in.
 
 ![The inbox](docs/screenshots/inbox.png)
 
@@ -13,9 +13,16 @@ infrastructure, behind your company's Google sign-in.
   against X, $cashtags, link cards, quote posts, a 280-character count, and a feed preview with "Show more". Autosaves.
 - **Review together.** Select words to comment, suggest edits as tracked changes the writer accepts or rejects, reply
   and resolve, @tag teammates. Approve, send back, or kill. Full version history with restore.
-- **Post and schedule.** Connect your company's X account once. Admins post approved drafts now or pick a time; a
-  queue shows what's going out when. Threads post in order; if one fails halfway, retry finishes it without
-  repeating the posts that went out. Editing a draft after approval holds it until someone approves it again.
+- **Post it two ways, and keep the cost down.**
+  - **Through X's API:** connect your company's X account once, then admins post approved drafts now or pick a time,
+    and a queue shows what's going out when. Threads post in order; if one fails halfway, retry finishes it without
+    repeating the posts that went out. The cost is on every button (about 1.5¢ a post, 20¢ with a link), and you can
+    set a monthly budget.
+  - **Post it yourself, free:** X's own composer opens with each post filled in, threads included (each post opens as
+    a reply to the one before). You post or schedule it on X, then mark it here.
+  - By default posts with links go the free way, since links are where nearly all the API cost is. Or use only one:
+    hand-posting needs no X developer account at all.
+  - Editing a draft after approval holds it until someone approves it again.
 - **Your team, plus the guests you invite.** Everyone on your company's email domain can sign in from day one.
   Admins invite anyone else (your agency, a freelancer) from Settings → People and can remove them any time. Guests
   sign in with Google, or with an email link if they don't have a Google account.
@@ -23,9 +30,9 @@ infrastructure, behind your company's Google sign-in.
 - **Extras.** Share links that unfurl with the copy and image in Slack, drag-and-drop folders, optional Slack DMs
   for comments, edits, approvals and posts.
 
-| Review | Scheduled |
+| Review | Ready to post |
 |---|---|
-| ![Review a draft](docs/screenshots/review.png) | ![A scheduled draft](docs/screenshots/scheduled.png) |
+| ![Review a draft](docs/screenshots/review.png) | ![Post it yourself, or through the API](docs/screenshots/publish.png) |
 
 ## Set it up with Claude Code (recommended)
 
@@ -64,7 +71,7 @@ npm run demo                 # in another terminal: adds a few sample drafts
 | Deploy to Vercel with Postgres and Blob storage | [docs/deploy.md](docs/deploy.md) |
 | Google sign-in for your domain | [docs/google-oauth.md](docs/google-oauth.md) |
 | Inviting guests (agencies, freelancers), admins, email sign-in links | [docs/people.md](docs/people.md) |
-| Connect your X account (and what X's API costs) | [docs/x-api.md](docs/x-api.md) |
+| Posting to X: by hand (free) or through the API, costs, budget | [docs/x-api.md](docs/x-api.md) |
 | The scheduler | [docs/scheduling.md](docs/scheduling.md) |
 | Slack notifications (optional) | [docs/slack.md](docs/slack.md) |
 
@@ -72,16 +79,17 @@ npm run demo                 # in another terminal: adds a few sample drafts
 
 ## What it costs to run
 
-- **Vercel**: the free Hobby plan works. Scheduled posts then go out within about 15 minutes of their time (or every
-  minute with a free external pinger, see [docs/scheduling.md](docs/scheduling.md)); Pro posts on the minute.
-- **Postgres**: Neon's free tier is plenty for a team's drafts.
-- **X API**: pay-per-use credits, roughly $0.015 per post and $0.20 for a post with a link (late 2026 prices).
-  See [docs/x-api.md](docs/x-api.md).
+- **Hosting:** Vercel's free Hobby plan is for personal, non-commercial use only, so a company should run this on
+  Vercel Pro ($20 a month). If your company already pays for Vercel, it adds nothing. Hobby is fine for trying it out.
+- **Postgres:** Neon's free tier is plenty for a team's drafts.
+- **X:** $0 if you post by hand. Through X's API it's pay-per-use: roughly $0.015 a post and $0.20 for a post with a
+  link (late 2026 prices). With the default "smart" setting (links posted by hand), a team posting about 6 times a
+  weekday spends a few dollars a month. See [docs/x-api.md](docs/x-api.md).
 
 ## How it's built
 
 Next.js 15 (App Router), React 19, Tailwind 3, Auth.js (Google), Postgres (any provider, via `postgres`; PGlite
-locally), Vercel Blob, X API v2 with OAuth 2.0. No other services. The map of the code is in [CLAUDE.md](CLAUDE.md).
+locally), Vercel Blob, and optionally X API v2 with OAuth 2.0. No other services. The map of the code is in [CLAUDE.md](CLAUDE.md).
 
 Roles: everyone who can sign in writes, comments, suggests and gives verdicts; a draft's writer edits it directly;
 admins also connect X, invite and remove people, delete and reorder drafts, and post and schedule.

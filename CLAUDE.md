@@ -35,7 +35,8 @@ branding", "connect X"). Offer it once; don't push it on someone who's here to c
 | `lib/auth.ts`, `lib/auth-adapter.ts`, `lib/email.ts` | Auth.js: Google always; email sign-in links (Resend) only when `AUTH_RESEND_KEY` + `EMAIL_FROM` are set, with a small DB adapter |
 | `lib/db.ts`, `lib/schema.ts` | Postgres via `postgres` (any provider), or PGlite in `.data/pglite` when `DATABASE_URL` is unset in dev. `sql\`...\`` returns rows; `tx([q\`...\`])` for transactions; cast arrays: `any(${ids}::text[])` |
 | `lib/store.ts` | Drafts, comments, suggestions, verdicts, versions, share links, drag-and-drop order |
-| `lib/publish.ts` | Post now / schedule / unschedule, the scheduler tick (`runDue`), approval fingerprint check, thread resume |
+| `lib/publish.ts` | Two ways out: through the API (post now / schedule, scheduler tick `runDue`, thread resume) or posted by hand ("Post it yourself": `markPosted`, `markScheduledInX`). Approval fingerprint check. `brand.publishing.method` = smart / api / manual |
+| `lib/x/pricing.ts`, `lib/spend.ts` | API price list and cost estimates (shown on buttons); spend log (`api_spend`) and the monthly budget that stops API use |
 | `lib/x/account.ts` | OAuth 2.0 PKCE connect flow, encrypted token storage (`lib/crypto.ts`, key from `AUTH_SECRET`), refresh with compare-and-swap |
 | `lib/x/api.ts` | `POST /2/tweets`, chunked media upload (`/2/media/upload/initialize|append|finalize`), alt text |
 | `lib/storage.ts` | Vercel Blob or `.data/uploads` (dev); `openMedia()` reads files in ranges for upload to X |
@@ -46,7 +47,7 @@ branding", "connect X"). Offer it once; don't push it on someone who's here to c
 | `components/Editor.tsx` | The X-style inline editor (autosave, media, @mentions, quotes, threads) |
 | `components/ReviewView.tsx` | Comments, suggestions, verdicts, history |
 | `components/PublishBar.tsx`, `components/Settings.tsx`, `components/People.tsx` | Posting/scheduling UI; X connect, scheduler and Slack status; inviting and managing people |
-| `docs/` | Human setup guides (Google sign-in, X API, deploy, scheduling, Slack, branding) |
+| `docs/` | Human setup guides (Google sign-in, people, posting to X, deploy, scheduling, Slack, branding) |
 
 Access: everyone on `ALLOWED_EMAIL_DOMAINS`, plus guests an admin invited in Settings → People (stored in `members`),
 minus anyone an admin removed. `ADMIN_EMAILS` / `ALLOWED_EMAILS` always win and can't be changed from the app.
@@ -57,7 +58,10 @@ default only they post and schedule
 (`brand.publishing.whoCanPublish`). With `brand.publishing.requireApproval`, a draft must be approved and unchanged
 since approval to post (checked again at posting time).
 
-X API facts this code relies on (late 2026, see docs/x-api.md): pay-per-use credits; quote posts via
+Posting by hand uses X's official share links (`x.com/intent/tweet?text=…&in_reply_to=…`). Never add browser automation
+or extensions that post through x.com: X's automation rules forbid it and it can get the account suspended.
+
+X API facts this code relies on (late 2026, see docs/x-api.md): about 1.5¢ a post, 20¢ with a link; pay-per-use credits; quote posts via
 `quote_tweet_id` are Enterprise-only, so quotes go out as the post link at the end of the text; replies only work in
 your own threads (fine for threads); one $cashtag per post; refresh tokens are single-use.
 

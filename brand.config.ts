@@ -51,6 +51,15 @@ export const brand = {
   labels: [] as string[],
 
   publishing: {
+    /**
+     * How approved drafts get onto X (docs/x-api.md has the costs):
+     *   "smart"   posts without links go through X's API (about 1.5¢ each); posts with a link (about 20¢ through the
+     *             API) default to "Post it yourself", which is free. Recommended.
+     *   "api"     everything goes through X's API: fully automatic posting and scheduling.
+     *   "manual"  never use X's API: every post is posted (or scheduled) by hand on X. No X developer app needed.
+     * Whichever you pick, people who can publish can still choose the other way on a single draft.
+     */
+    method: "smart" as "smart" | "api" | "manual",
     /** A draft must be approved, and not edited since, before it can be posted or scheduled. */
     requireApproval: true,
     /** Who can post and schedule: "admins" (ADMIN_EMAILS) or "everyone" who can sign in. */

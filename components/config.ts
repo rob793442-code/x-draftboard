@@ -8,6 +8,7 @@ export type ClientConfig = {
   scheduler: { secret_set: boolean; last_run: { at: string; posted?: number; failed?: number } | null };
   slack: { token_set: boolean; people: number; you: boolean };
   access: { domains: string[]; email_signin: boolean };
+  publishing: { method: "smart" | "api" | "manual"; spend: { month: number; budget: number | null } };
   dev_user: boolean;
 };
 

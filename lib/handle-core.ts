@@ -33,11 +33,14 @@ export async function xApi(token: string, p: string, params: Record<string, stri
   return j as { data?: ApiUser[]; errors?: { value?: string; title?: string; detail?: string }[] };
 }
 
-/** Looks these handles up on X (≤100 per call) and records what it finds in `dir`. */
-export async function lookupOnX(token: string, dir: Dir, handles: string[], source: string) {
+/** Looks these handles up on X (≤100 per call) and records what it finds in `dir`. Returns how many accounts X
+ *  returned (what X bills for). */
+export async function lookupOnX(token: string, dir: Dir, handles: string[], source: string): Promise<number> {
+  let found = 0;
   for (let i = 0; i < handles.length; i += 100) {
     const batch = handles.slice(i, i + 100);
     const j = await xApi(token, "users/by", { usernames: batch.join(","), "user.fields": FIELDS });
+    found += j.data?.length ?? 0;
     for (const u of j.data ?? []) {
       const k = u.username.toLowerCase();
       dir.users[k] = toUser(u, [source], dir.users[k]);
@@ -51,6 +54,7 @@ export async function lookupOnX(token: string, dir: Dir, handles: string[], sour
       delete dir.users[k];
     }
   }
+  return found;
 }
 
 /** Which of these handles need a (re)check on X: never seen, or seen too long ago. */

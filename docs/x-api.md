@@ -1,9 +1,28 @@
-# Connect your X account
+# Posting to X
 
-Draftboard posts through X's official API, as one company account that an admin connects once. You need an X
-developer app with OAuth 2.0 turned on, and API credits.
+An approved draft gets onto X one of two ways. Every draft offers both; `publishing.method` in `brand.config.ts`
+decides which one leads.
 
-## What it costs (late 2026)
+| | Post it yourself | Through X's API |
+|---|---|---|
+| Cost | free | about 1.5¢ a post, 20¢ if it has a link |
+| How | X's own composer opens with each post filled in; you attach media, post or schedule it on X, then click "I posted it" (or "I scheduled it in X") | the board posts it, now or at the time you pick |
+| Threads | one post at a time: paste each post's link and the next one opens as its reply | automatic |
+| Needs | someone signed in to X as the company account | an X developer app with credits, connected once by an admin |
+
+`publishing.method`:
+
+- **`"smart"`** (default): posts without links go through the API; posts with a link default to Post it yourself.
+  Links are where nearly all the cost is.
+- **`"api"`**: everything through the API (fully hands-off).
+- **`"manual"`**: never use the API. You can skip the rest of this guide: no X app, no credits.
+
+Post it yourself uses X's official [share links](https://docs.x.com/x-for-websites/post-button/guides/web-intent)
+(`x.com/intent/tweet`), which is X's own supported way to fill in its composer. Don't use browser extensions or scripts
+that click around x.com for you: X's [automation rules](https://help.x.com/en/rules-and-policies/x-automation) forbid
+it and can permanently suspend the account.
+
+## What the API costs (late 2026)
 
 X's API is pay-per-use: you buy credits in the [Developer Console](https://console.x.com) and each request draws them
 down. There is no free tier for new developers. At the time of writing:
@@ -15,9 +34,38 @@ down. There is no free tier for new developers. At the time of writing:
 | Alt text on an image | $0.005 |
 | Looking up an @handle (the editor's tag check) | about $0.01, cached for 30 days |
 
-Quotes go out as a link to the quoted post (see below), so they're billed as posts with a link. Set a spending limit
-in the console. Check [X's pricing page](https://docs.x.com/x-api/getting-started/pricing) for current numbers.
-Set `X_CHECK_HANDLES=off` if you don't want the editor to look up @handles.
+Quotes go out as a link to the quoted post (see below), so they're billed as posts with a link. Check
+[X's pricing page](https://docs.x.com/x-api/getting-started/pricing) for current numbers. Set `X_CHECK_HANDLES=off` if
+you don't want the editor to look up @handles.
+
+**Keeping it in check:**
+
+- Every API button shows what that draft will cost, and Post now asks before spending.
+- **Settings → Posting and costs** shows the month's spend, estimated from the price list, and lets an admin set a
+  monthly budget. Past it, the board stops using the API until next month (and stops @handle lookups); Post it yourself
+  still works.
+- Also set a **spending limit in X's Developer Console**: that's the hard stop, and the console's meter is the real one.
+
+Example: about 6 posts a weekday (130 a month), 40% with a link, costs about $11 a month all through the API, or about
+$1 with "smart".
+
+## Posting it yourself, step by step
+
+1. Approve the draft, then click **Post it yourself · free** above it.
+2. Make sure your browser is signed in to X as the company account.
+3. For each post: **Open in X** (the composer opens with the text filled in), drag in the media you downloaded with
+   **Download**, paste the alt text, then post it. For a thread, paste each post's link into the box under it once it's
+   up: the next post's **Open in X as a reply** then opens as its reply.
+4. To schedule instead of posting, use the schedule option in X's composer (on some accounts it needs X Premium), then
+   click **I scheduled it in X** and enter the same time. It waits in the Queue marked "in X" and moves to Posted
+   once that time passes.
+5. Click **I posted it** (with the first post's link, if you have it) so the draft moves to Posted.
+
+Hand-posting has none of the API's limits below: more than one $cashtag is fine.
+
+## Setting up the API
+
+You only need this to have the board post and schedule by itself.
 
 ## 1. Create the app
 

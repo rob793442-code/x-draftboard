@@ -6,6 +6,8 @@ import { sql } from "./db";
 import type { XUser } from "./types";
 import { answer, cleanHandles, lookupOnX, needsCheck, rank, usageIn, type Dir } from "./handle-core";
 import { accessToken } from "./x/account";
+import { overBudget, recordSpend } from "./spend";
+import { X_PRICES } from "./x/pricing";
 
 type Row = { username: string; profile: XUser | null; missing: string | null; checked_at: Date | string };
 
@@ -52,11 +54,14 @@ export async function lookupDb(names: string[]): Promise<{ users: Record<string,
   const want = cleanHandles(names);
   if (!want.length) return { users: {}, missing: {} };
   const dir = await readDir(want);
-  const todo = process.env.X_CHECK_HANDLES === "off" ? [] : needsCheck(dir, want);
+  let todo = process.env.X_CHECK_HANDLES === "off" ? [] : needsCheck(dir, want);
+  // each account looked up is a billed read; past the monthly budget, tags just stay unchecked
+  if (todo.length && (await overBudget(todo.length * X_PRICES.userRead))) todo = [];
   const token = todo.length ? (process.env.X_BEARER_TOKEN?.trim() || (await accessToken().catch(() => null))) : null;
   if (token && todo.length) {
     try {
-      await lookupOnX(token, dir, todo, "lookup");
+      const found = await lookupOnX(token, dir, todo, "lookup");
+      await recordSpend("handle_lookup", found * X_PRICES.userRead);
       await writeDir(dir, todo);
     } catch (e) {
       // No API credits, a rate limit, X having a moment: the tags just stay unchecked this time.

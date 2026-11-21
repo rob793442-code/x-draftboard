@@ -8,6 +8,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { getState, setState, deleteState, sql } from "../db";
 import { X_CALLBACK_URL, X_CLIENT_ID, X_CLIENT_SECRET } from "../config";
 import { open, seal } from "../crypto";
+import { recordSpend } from "../spend";
+import { X_PRICES } from "./pricing";
 import type { XAccount } from "../types";
 
 export const X_SCOPES = ["tweet.read", "tweet.write", "users.read", "media.write", "offline.access"];
@@ -82,6 +84,7 @@ const profile = (me: Me): Pick<XAccount, "id" | "username" | "name" | "avatar" |
 export async function finishConnect(code: string, verifier: string, by: string): Promise<XAccount> {
   const t = await tokenRequest({ grant_type: "authorization_code", code, redirect_uri: X_CALLBACK_URL, code_verifier: verifier, client_id: X_CLIENT_ID });
   const me = await fetchMe(t.access_token);
+  await recordSpend("account_read", X_PRICES.userRead);
   const stored: Stored = {
     ...profile(me),
     connected_by: by,
@@ -135,6 +138,7 @@ export async function refreshProfile(): Promise<XAccount | null> {
   const s = await getState<Stored>("x_account");
   if (!s) return null;
   const me = await fetchMe(await accessToken());
+  await recordSpend("account_read", X_PRICES.userRead);
   const cur = (await getState<Stored>("x_account")) ?? s;
   const next = { ...cur, ...profile(me) };
   await setState("x_account", next);
